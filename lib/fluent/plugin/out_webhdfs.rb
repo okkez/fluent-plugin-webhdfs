@@ -6,14 +6,16 @@ require 'webhdfs'
 require 'tempfile'
 require 'fluent/plugin/output'
 
-require 'fluent/mixin/config_placeholders'
-require 'fluent/mixin/plaintextformatter'
-
 class Fluent::Plugin::WebHDFSOutput < Fluent::Plugin::Output
   Fluent::Plugin.register_output('webhdfs', self)
 
-  config_set_default :buffer_type, 'memory'
-  config_set_default :time_slice_format, '%Y%m%d'
+  helpers :compat_parameters, :formatter
+
+  DEFAULT_FORMAT_TYPE = "json"
+
+  config_section :buffer do
+    config_set_default :@type, 'memory'
+  end
 
   desc 'WebHDFS/HttpFs host'
   config_param :host, :string, :default => nil
@@ -54,8 +56,6 @@ class Fluent::Plugin::WebHDFSOutput < Fluent::Plugin::Output
   # which is considered enough to exclude the scenes that caused by temporary network fail or single datanode fail
   desc 'How many times of write failure before switch to standby namenode'
   config_param :failures_before_use_standby, :integer, :default => 11
-
-  include Fluent::Mixin::PlainTextFormatter
 
   config_param :default_tag, :string, :default => 'tag_missing'
 
@@ -110,6 +110,8 @@ class Fluent::Plugin::WebHDFSOutput < Fluent::Plugin::Output
       end
     end
 
+    compat_parameters_convert(conf, :buffer, :format)
+
     super
 
     begin
@@ -159,6 +161,11 @@ class Fluent::Plugin::WebHDFSOutput < Fluent::Plugin::Output
         raise Fluent::ConfigError, "path must contain ${chunk_id}, which is the placeholder for chunk_id, when append is set to false."
       end
     end
+  end
+
+  def start
+    @formatter = formatter_create(conf: @config.elements("format").first, default_type: DEFAULT_FORMAT_TYPE)
+    super
   end
 
   def prepare_client(host, port, username)
